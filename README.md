@@ -1,86 +1,50 @@
-# StudySpot — Full Project
+# StudySpot
 
-React + Vite campus study-space finder with optional Supabase authentication, database storage, staff authorization, and realtime availability updates.
+Find a free study seat on campus. Plain HTML, CSS and JavaScript with Supabase for accounts and data, ready for GitHub and Vercel. No build step.
 
-## Included
-- Responsive student campus finder
-- Search by room/building
-- Quiet/group, minimum seats, walking distance, Wi-Fi and power filters
-- Seat counts, space details and last-updated time
-- Supabase email/password sign-up and sign-in
-- Staff/admin page to update seat availability
-- Database RLS policies and realtime refresh
-- Demo mode with sample data when Supabase is not configured
+Covers the Done cards on the Trello board:
 
-## Important scope notes
-The six sample spaces and seat counts are placeholders, not verified Siam University locations or live occupancy. Replace them with approved campus data before launch. Reservations are not implemented in this version; booking duration, cancellation, no-show handling and limits should be agreed before building that feature. Staff manually update availability; the app does not automatically count occupied seats.
+| Card | What it does |
+|------|--------------|
+| US-01 Account and login | Register with email and password, log in, wrong-password error, duplicate email blocked, logged-in state, log out |
+| US-02 Search study spaces | Keyword search over name, type and location; full list when empty; "No study spaces found" message |
+| US-11 Update availability | Admin sets open seats (0 to total); students see it within seconds; student access refused by database rules |
+| Demo extras | Sign up logs you straight in; students save spaces to a Saved page; admin adds, edits (all details) and deletes spaces |
 
-## 1. Run locally
-Requires Node.js 20+ and npm.
-```bash
-npm install
-npm run dev
+## Folder structure
+
 ```
-Open the local Vite URL, usually http://localhost:5173. Without Supabase credentials, the finder runs in demo mode.
-
-## 2. Configure Supabase
-1. Create a project at https://supabase.com.
-2. Copy the Project URL and anon/publishable key from Project Settings → API.
-3. Copy `.env.example` to `.env.local` and set:
-```env
-VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-```
-Never use the service_role key in this browser app. Do not commit `.env.local`.
-
-## 3. Create database
-Open Supabase SQL Editor and run `supabase/schema.sql`. It creates profiles and study_spaces, enables RLS, adds staff policies, enables realtime and inserts sample rows. If Realtime says the table is already in the publication, remove the `alter publication` line and rerun the rest.
-
-## 4. Promote your first admin
-1. Create an account in StudySpot after configuring Supabase.
-2. In Supabase → Authentication → Users, copy that user's UUID.
-3. Run this in SQL Editor, replacing the placeholder with the real UUID:
-```sql
-update public.profiles set role='admin' where id='PASTE-USER-UUID-HERE';
-```
-Use role `staff` for a staff account. Only a trusted project owner should run this command. Users cannot promote themselves through the app.
-
-## 5. Add verified campus spaces
-Use Supabase Table Editor or SQL. Required fields: name, building, type (`quiet` or `group`), total_seats, available_seats, distance_minutes, wifi, power_outlets, quiet_environment, description and is_active. Available seats cannot exceed total seats. Set is_active=false to hide a space. Replace the demo distance estimates with a consistent campus walking-time method.
-
-## 6. Build and deploy
-```bash
-npm run build
-```
-Vite outputs `dist/`. For Vercel: push the project to GitHub, import the repository, choose Vite, set build command `npm run build`, output directory `dist`, add both VITE_SUPABASE environment variables, then deploy. Redeploy after changing environment variables.
-
-## 7. Push to GitHub
-```bash
-git init
-git add .
-git commit -m "Initial StudySpot project"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-git push -u origin main
+studyspot/
+  index.html              Home: hero, search, study spaces
+  pages/                  login.html, register.html, saved.html, admin.html
+  css/                    base.css (tokens, forms, buttons), layout.css (header, pages)
+  js/
+    config.js             Supabase URL, key, optional email domain
+    lib/                  supabase.js, auth.js, saved.js, utils.js
+    components/           header.js (hamburger nav + footer), spaceCard.js
+    pages/                one script per page
+  assets/                 favicon.svg
+  supabase/               schema.sql (tables, rules, seed data), 02_demo_features.sql
+  vercel.json
 ```
 
-## Structure
-```text
-studyspot-project/
-├── index.html
-├── package.json
-├── vite.config.js
-├── .env.example
-├── .gitignore
-├── README.md
-├── src/
-│   ├── App.jsx
-│   ├── main.jsx
-│   ├── styles.css
-│   ├── data/demoSpaces.js
-│   └── lib/{spaces.js,supabase.js}
-└── supabase/schema.sql
-```
+## Setup
 
-## Before production
-Test student and staff accounts separately. Confirm students cannot update seat counts. Verify campus locations, opening hours and seat counts with the university. Add reservation workflows and an audit log as later development tasks. The app uses only the Supabase anon key; database policies enforce permissions.
+1. **Supabase:** create a project. In SQL Editor run `supabase/schema.sql`, then `supabase/02_demo_features.sql` (both can be re-run safely; always keep that order).
+2. **Keys:** Project Settings > API. Copy the Project URL and anon key into `js/config.js`.
+3. **No email confirmation:** Authentication > Providers > Email > turn "Confirm email" off. (`02_demo_features.sql` also auto-confirms new accounts as a backup.)
+4. **Roles:** every sign-up is a **student**. Only SQL can make an admin: run `supabase/04_separate_roles.sql` after editing your admin email in it. The header shows a Student or Admin badge so you always know which account you are in.
+5. **If admin cannot edit:** run `supabase/03_fix_admin.sql`, then log out and back in.
+6. **Run locally:** `npx serve .` then open the printed address.
+6. **GitHub:** `git init`, commit, push to a new repository.
+7. **Vercel:** Add New > Project > import the repository. Framework preset "Other", no build command. Deploy.
+8. **Supabase URL settings:** Authentication > URL Configuration. Set Site URL to your Vercel address.
+
+## Test checklist
+
+- Register (you land logged in, no email step), log in, wrong password shows an error, same email twice is blocked, log out works.
+- Search "library", search "xyz" (shows the empty message), clear the box (shows all).
+- As a student, press Save on a space; it appears on the Saved page and stays after logging out and back in.
+- As admin, add a space, edit its details, delete it. Set open seats above the total (rejected), then a valid number. Open the home page in another tab and watch it change.
+- As a student, the Admin link is hidden and `/pages/admin.html` shows "Administrators only".
+- Resize below 860px: the hamburger menu appears.

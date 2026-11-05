@@ -1,55 +1,82 @@
--- Run in Supabase SQL Editor. Replace sample spaces with verified campus data.
-create extension if not exists pgcrypto;
+-- StudySpot schema. Run in Supabase: SQL Editor > New query > Run. Safe to run more than once.
+-- Run order: schema.sql first, then 02_demo_features.sql.
+
+-- Profiles: one row per user, role is 'student' unless an admin promotes them.
 create table if not exists public.profiles (
- id uuid primary key references auth.users(id) on delete cascade,
- full_name text not null default '',
- role text not null default 'student' check(role in ('student','staff','admin')),
- created_at timestamptz not null default now()
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  role text not null default 'student' check (role in ('student','admin')),
+  created_at timestamptz not null default now()
 );
-create table if not exists public.study_spaces (
- id uuid primary key default gen_random_uuid(),
- name text not null, building text not null,
- type text not null check(type in ('quiet','group')),
- total_seats integer not null check(total_seats>=0),
- available_seats integer not null default 0 check(available_seats>=0),
- distance_minutes integer not null default 0 check(distance_minutes>=0),
- wifi boolean not null default false, power_outlets boolean not null default false,
- quiet_environment boolean not null default false, description text not null default '',
- is_active boolean not null default true, updated_at timestamptz not null default now(),
- created_at timestamptz not null default now(),
- constraint available_not_over_total check(available_seats<=total_seats)
-);
-create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path='' as $$
-begin
- insert into public.profiles(id,full_name) values(new.id,coalesce(new.raw_user_meta_data->>'full_name','Student'));
- return new;
-end; $$;
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
-create or replace function public.current_user_is_staff() returns boolean language sql stable security definer set search_path='' as $$
- select exists(select 1 from public.profiles where id=(select auth.uid()) and role in ('staff','admin'));
-$$;
 alter table public.profiles enable row level security;
+drop policy if exists "users read own profile" on public.profiles;
+create policy "users read own profile" on public.profiles for select using (auth.uid() = id);
+-- No insert/update policies: users can never grant themselves admin.
+
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (id, email) values (new.id, new.email);
+  return new;
+end $$;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+$$;
+
+-- Study spaces
+create table if not exists public.study_spaces (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  type text not null check (type in ('quiet','group')),
+  location text not null,
+  total_seats int not null check (total_seats > 0),
+  open_seats int not null check (open_seats >= 0),
+  has_wifi boolean not null default true,
+  has_outlets boolean not null default true,
+  last_updated timestamptz not null default now(),
+  constraint open_within_total check (open_seats <= total_seats)
+);
 alter table public.study_spaces enable row level security;
-drop policy if exists "Users can read own profile" on public.profiles;
-create policy "Users can read own profile" on public.profiles for select to authenticated using(id=(select auth.uid()) or public.current_user_is_staff());
-drop policy if exists "Staff can update profiles" on public.profiles;
-create policy "Staff can update profiles" on public.profiles for update to authenticated using(public.current_user_is_staff()) with check(public.current_user_is_staff());
-drop policy if exists "Anyone can read active study spaces" on public.study_spaces;
-create policy "Anyone can read active study spaces" on public.study_spaces for select to anon,authenticated using(is_active=true);
-drop policy if exists "Staff can insert study spaces" on public.study_spaces;
-create policy "Staff can insert study spaces" on public.study_spaces for insert to authenticated with check(public.current_user_is_staff());
-drop policy if exists "Staff can update study spaces" on public.study_spaces;
-create policy "Staff can update study spaces" on public.study_spaces for update to authenticated using(public.current_user_is_staff()) with check(public.current_user_is_staff());
-drop policy if exists "Staff can delete study spaces" on public.study_spaces;
-create policy "Staff can delete study spaces" on public.study_spaces for delete to authenticated using(public.current_user_is_staff());
--- If this line says the table is already in the publication, remove it and rerun the rest.
-alter publication supabase_realtime add table public.study_spaces;
-insert into public.study_spaces(name,building,type,total_seats,available_seats,distance_minutes,wifi,power_outlets,quiet_environment,description) values
-('Main Library — Silent Zone','Main Library · 2nd floor','quiet',40,12,4,true,true,true,'Individual desks in a designated silent study area.'),
-('Learning Commons','Student Center · Ground floor','group',24,7,6,true,true,false,'Shared tables for small group study and discussion.'),
-('Engineering Study Room','Engineering Building · 3rd floor','quiet',18,3,8,true,true,true,'Focused work area with desks and power outlets.'),
-('Humanities Reading Room','Humanities Building · 1st floor','quiet',30,0,9,true,false,true,'A quiet reading room for individual study.'),
-('Project Collaboration Room','Innovation Hub · 2nd floor','group',16,9,10,true,true,false,'Flexible seating for project teams and collaborative work.'),
-('North Wing Study Lounge','North Academic Wing · 1st floor','quiet',22,5,3,false,true,true,'Casual individual study seating near the north entrance.')
-on conflict do nothing;
+drop policy if exists "anyone can read spaces" on public.study_spaces;
+drop policy if exists "admins insert spaces" on public.study_spaces;
+drop policy if exists "admins update spaces" on public.study_spaces;
+drop policy if exists "admins delete spaces" on public.study_spaces;
+create policy "anyone can read spaces" on public.study_spaces for select using (true);
+create policy "admins insert spaces" on public.study_spaces for insert with check (public.is_admin());
+create policy "admins update spaces" on public.study_spaces for update using (public.is_admin()) with check (public.is_admin());
+create policy "admins delete spaces" on public.study_spaces for delete using (public.is_admin());
+
+create or replace function public.touch_last_updated() returns trigger language plpgsql as $$
+begin new.last_updated = now(); return new; end $$;
+drop trigger if exists study_spaces_touch on public.study_spaces;
+create trigger study_spaces_touch before update on public.study_spaces
+  for each row execute function public.touch_last_updated();
+
+-- Live updates for students
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'study_spaces') then
+    alter publication supabase_realtime add table public.study_spaces;
+  end if;
+end $$;
+
+-- Seed data (8 spaces), only when the table is empty
+insert into public.study_spaces (name, type, location, total_seats, open_seats, has_wifi, has_outlets)
+select * from (values
+  ('Main Library Silent Hall', 'quiet', 'Main Library, Level 2', 60, 24, true, true),
+  ('Main Library Reading Room', 'quiet', 'Main Library, Level 1', 40, 12, true, false),
+  ('Engineering Study Lounge', 'group', 'Block B, Ground Floor', 30, 9, true, true),
+  ('Science Commons', 'group', 'Science Building, Level 3', 36, 18, true, true),
+  ('Business School Atrium', 'group', 'Business Building, Level 1', 50, 31, true, true),
+  ('Arts Quiet Corner', 'quiet', 'Arts Building, Level 2', 20, 5, false, true),
+  ('Student Centre Co-work Space', 'group', 'Student Centre, Level 2', 44, 0, true, true),
+  ('Night Study Room', 'quiet', 'Main Library, Basement', 25, 14, true, true)
+) as v(name, type, location, total_seats, open_seats, has_wifi, has_outlets)
+where not exists (select 1 from public.study_spaces);
+
+-- Make someone admin (replace the email):
+-- update public.profiles set role = 'admin' where email = 'you@university.edu';

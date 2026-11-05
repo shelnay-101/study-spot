@@ -1,1 +1,34 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#173c43"/><meta name="description" content="Find available campus study spaces with StudySpot."/><title>StudySpot — Find your place to focus</title></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StudySpot | Find a free study seat</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+  <div id="site-header"></div>
+  <main>
+    <section class="hero"><div class="container">
+      <h1>Find a free seat before you walk there.</h1>
+      <p>See which study spaces on campus have room right now. Search by name, type or place.</p>
+      <form class="search" id="search-form" role="search">
+        <input id="q" type="search" placeholder="Try &quot;library&quot;, &quot;quiet&quot; or &quot;Block B&quot;" aria-label="Search study spaces" autocomplete="off">
+        <button class="btn btn-gold" type="submit">Search</button>
+      </form>
+    </div></section>
+    <section class="section" id="spaces"><div class="container">
+      <div class="section-head"><h2>Study spaces</h2><span class="muted" id="result-count" aria-live="polite"></span></div>
+      <div class="grid" id="spaces-list"><div class="empty"><p class="muted">Loading study spaces...</p></div></div>
+    </div></section>
+  </main>
+  <div id="site-footer"></div>
+  <script type="module" src="/js/pages/home.js"></script>
+</body>
+</html>
